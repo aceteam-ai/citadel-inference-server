@@ -66,18 +66,20 @@ jobs:
           cache-from: type=gha,scope=base
           cache-to: type=gha,mode=max,scope=base
 
+      # Built with the DAEMON's builder (`--builder default`), not the buildx
+      # docker-container builder setup-buildx-action made current: that one
+      # resolves FROM images from registries only and cannot see the :base
+      # image `load: true` just put into the daemon, so it would try to pull
+      # docker.io/library/citadel-inference-server:base and fail. The cost is
+      # no GHA layer cache for this thin layer (the expensive torch layer is
+      # still cached above). publish.yml is unaffected: its :tts build pulls
+      # :base-<sha> from GHCR.
       - name: Build :tts (no push)
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: images/tts/Dockerfile
-          build-args: |
-            BASE_IMAGE=citadel-inference-server:base
-          push: false
-          load: true
-          tags: citadel-inference-server:tts
-          cache-from: type=gha,scope=tts
-          cache-to: type=gha,mode=max,scope=tts
+        run: |
+          docker buildx build --builder default \
+            -f images/tts/Dockerfile \
+            --build-arg BASE_IMAGE=citadel-inference-server:base \
+            -t citadel-inference-server:tts .
 
       - name: Image sanity (omnivoice importable, cis importable)
         run: |
