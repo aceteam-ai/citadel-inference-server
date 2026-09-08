@@ -1,0 +1,52 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "citadel-inference-server"
+version = "0.1.0"
+description = "Generic, config-driven inference server for the AceTeam Sovereign Compute Fabric (base runtime + per-family adapters)"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.10"
+authors = [{ name = "AceTeam.ai" }]
+dependencies = [
+    # The base runtime. Deliberately torch-free: torch is installed by the
+    # :base IMAGE (images/base/Dockerfile) and imported lazily inside the
+    # adapters that need it, so `import cis` and the whole hermetic test suite
+    # work in a plain CPU venv with no GPU and no model download.
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "pydantic>=2.0",
+    "numpy>=1.26",
+    "soundfile>=0.12",
+    "huggingface_hub>=0.26",
+]
+
+[project.optional-dependencies]
+# The TTS family layer (images/tts/Dockerfile). omnivoice pins torch>=2.4 and
+# transformers>=5.3; the image installs the CUDA torch wheels FIRST so this
+# resolves against them instead of pulling CPU torch from PyPI.
+tts-omnivoice = ["omnivoice>=0.2.1"]
+dev = [
+    "pytest>=8",
+    "httpx>=0.27",
+    "ruff>=0.6",
+]
+
+[project.scripts]
+cis = "cis.__main__:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["cis"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W", "B", "UP"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

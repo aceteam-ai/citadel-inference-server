@@ -1,0 +1,87 @@
+# CI: hermetic tests + image builds (no push) + a smoke test of the BUILT :tts
+# image via the dependency-free `stub` adapter. No GPU, no model download.
+#
+# Publishing to GHCR is publish.yml (push to main only).
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: "0.9.10"
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Sync dev environment
+        run: uv sync --extra dev
+
+      - name: Lint
+        run: uv run ruff check .
+
+      - name: Test (hermetic; stub adapter + fake OmniVoice)
+        env:
+          # Belt and braces: the suite must never reach HF. Offline mode makes
+          # any accidental network call fail loudly instead of downloading.
+          HF_HUB_OFFLINE: "1"
+        run: uv run pytest -q
+
+  images:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # torch cu128 + transformers + gradio in one image is tight on a hosted
+      # runner's ~14 GB of free disk; reclaim the preinstalled toolchains.
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          sudo docker image prune -af >/dev/null 2>&1 || true
+          df -h /
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build :base (no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: images/base/Dockerfile
+          push: false
+          load: true
+          tags: citadel-inference-server:base
+          cache-from: type=gha,scope=base
+          cache-to: type=gha,mode=max,scope=base
+
+      - name: Build :tts (no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: images/tts/Dockerfile
+          build-args: |
+            BASE_IMAGE=citadel-inference-server:base
+          push: false
+          load: true
+          tags: citadel-inference-server:tts
+          cache-from: type=gha,scope=tts
+          cache-to: type=gha,mode=max,scope=tts
+
+      - name: Image sanity (omnivoice importable, cis importable)
+        run: |
+          docker run --rm citadel-inference-server:tts python -c "import cis, omnivoice, torch; print('cis', cis.__version__, 'omnivoice', omnivoice.__version__, 'torch', torch.__version__, 'cuda-build', torch.version.cuda)"
+
+      - name: Smoke test the built :tts image (stub adapter, no GPU, no model)
+        run: bash scripts/smoke.sh citadel-inference-server:tts 18000
