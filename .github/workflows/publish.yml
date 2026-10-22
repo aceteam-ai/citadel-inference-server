@@ -64,7 +64,7 @@ jobs:
           file: images/base/Dockerfile
           push: true
           tags: |
-            ${{ env.IMAGE }}:base
+            ${{ github.ref == 'refs/heads/main' && format('{0}:base', env.IMAGE) || '' }}
             ${{ env.IMAGE }}:base-${{ steps.sha.outputs.short }}
           cache-from: type=gha,scope=base
           cache-to: type=gha,mode=max,scope=base
@@ -90,4 +90,6 @@ jobs:
       - name: Push :tts
         run: |
           docker push "${IMAGE}:tts-${{ steps.sha.outputs.short }}"
-          docker push "${IMAGE}:tts"
+          if [ "${GITHUB_REF}" = "refs/heads/main" ]; then
+            docker push "${IMAGE}:tts"
+          fi
